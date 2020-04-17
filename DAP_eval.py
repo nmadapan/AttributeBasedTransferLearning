@@ -54,32 +54,32 @@ def evaluate(split,C, attributepattern, p_type='binary'):
         L.extend( [c]*numexamples[classnames[c]] )
 
     L=np.array(L)  # (n,)
-
+    
     if p_type == 'binary':
-        P = np.loadtxt(attributepattern) # (85,n)
+        P = np.loadtxt(attributepattern) # (n, 85)
 
         prior = np.mean(M[train_classes],axis=0)
         prior[prior==0.]=0.5
         prior[prior==1.]=0.5    # disallow degenerated priors
         M = M[test_classes] # (10,85)
 
-        prob=[]
+        prob=[] # (n, 10)
         for p in P:
             prob.append( np.prod(M*p + (1-M)*(1-p),axis=1)/np.prod(M*prior+(1-M)*(1-prior), axis=1) )
 
-            MCpred = np.argmax( prob, axis=1 )
-	    
-            d = len(test_classes)
-            confusion=np.zeros([d,d])
-            for pl,nl in zip(MCpred,L):
-                try:
-                    gt = test_classes.index(nl)
-                    confusion[gt,pl] += 1.
-                except:
-                    pass
+        MCpred = np.argmax( prob, axis=1 ) # (n, )
+    
+        d = len(test_classes)
+        confusion=np.zeros([d,d])
+        for pl,nl in zip(MCpred,L):
+            try:
+                gt = test_classes.index(nl)
+                confusion[gt,pl] += 1.
+            except: # Why do you need this except
+                pass
 
-            for row in confusion:
-                row /= sum(row)
+        for row in confusion:
+            row /= sum(row)
 	    
         return confusion,np.asarray(prob),L
     
@@ -205,7 +205,7 @@ def main():
         C = 10.
 
     if p_type == 'binary':
-        attributepattern = 'DAP/probabilities_' + clf
+        attributepattern = 'DAP_binary/probabilities_' + clf
         confusion,prob,L = evaluate(split,C, attributepattern)
         plot_confusion(confusion, clf) 
         plot_roc(prob,L, clf)

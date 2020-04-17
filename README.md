@@ -56,3 +56,14 @@ python IAP_eval.py
 python preparePubFigFiles.py
 ```
 
+## Other observations
+sklearn.svm.SVC or sklearn.svm.LinearSVC classes have the instance variable 'class_weight'. 
+This variable is defaulted to None: all classes are punished in a similar way. 
+This variable can be set to 'balanced' or a dictionary (keys are class labels, values are associated cost factor). 
+Consider a binary classifier. Let the class labels be 0 and 1. Let `alph` be the percentage of ones in data. 
+
+```
+alph = #(No. of samples with class 1)/ #(Total no. of samples)
+# c_wt = {0: alph, 1: (1 - alph)}
+c_wt = {0: 0.5/(1-alph), 1: 0.5/alph} # 'balanced'
+```

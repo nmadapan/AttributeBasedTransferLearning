@@ -60,7 +60,8 @@ def main():
 		method = str(sys.argv[1])
 	except IndexError:
 		print ("Must specify attribute method!")
-		raise SystemExit
+        method = 'IAP'
+		# raise SystemExit
 	try:
 	    clf = str(sys.argv[2])
 	except IndexError:

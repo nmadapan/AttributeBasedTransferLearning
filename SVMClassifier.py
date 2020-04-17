@@ -5,39 +5,49 @@ from sklearn.kernel_approximation import SkewedChi2Sampler
 from sklearn.base import BaseEstimator
 from platt import SigmoidTrain, SigmoidPredict
 
+# class SVMClassifier2(BaseEstimator):
+# 	def __init__(self, C=100):
+# 		self.clf = Pipeline([("svm", LinearSVC(C=C, class_weight = 'auto', random_state = 42))])
+
+# 	def fit(self, X, y):
+# 		self.clf.fit(X, y)
+
+# 	def predict(self, X):
+# 		return self.clf.predict(X)
+
 class SVMClassifier(BaseEstimator):
-    def __init__(self, skewedness=3., n_components=85, C=100):
-    	self.platt_params = []
-    	self.feature_map_fourier = SkewedChi2Sampler(skewedness=skewedness,	n_components=n_components)
-    	self.clf = Pipeline([("feature_map", self.feature_map_fourier),
-			                 ("svm", LinearSVC(C=C))
-                            ])
+	def __init__(self, skewedness=3., n_components=85, C=100, rs = None):
+		self.platt_params = []
+		self.feature_map_fourier = SkewedChi2Sampler(skewedness=skewedness,	n_components=n_components, random_state = rs)
+		self.clf = Pipeline([("feature_map", self.feature_map_fourier),
+							 ("svm", LinearSVC(C=C, random_state = rs, class_weight = 'balanced'))
+							])
 
-    def fit(self, X, y):
-    	self.clf.fit(X, y)
+	def fit(self, X, y):
+		self.clf.fit(X, y)
 
-    def set_platt_params(self, X, y):
-    	y_pred = self.clf.predict(X)
-    	self.platt_params = SigmoidTrain(y_pred, y)
+	def set_platt_params(self, X, y):
+		y_pred = self.clf.predict(X)
+		self.platt_params = SigmoidTrain(y_pred, y)
 
-    def predict(self, X):
-    	return self.clf.predict(X)
+	def predict(self, X):
+		return self.clf.predict(X)
 
-    def predict_proba(self, X):
-        y_pred = self.clf.predict(X)
-        return SigmoidPredict(y_pred, self.platt_params)
+	def predict_proba(self, X):
+		y_pred = self.clf.predict(X)
+		return SigmoidPredict(y_pred, self.platt_params)
 
 class SVMClassifierIAP(BaseEstimator):
-    def __init__(self, skewedness=3., n_components=85, C=100.):
-    	self.feature_map_fourier = SkewedChi2Sampler(skewedness=skewedness,	n_components=n_components)
-    	self.clf = Pipeline([("feature_map", self.feature_map_fourier),
+	def __init__(self, skewedness=3., n_components=85, C=100.):
+		self.feature_map_fourier = SkewedChi2Sampler(skewedness=skewedness,	n_components=n_components)
+		self.clf = Pipeline([("feature_map", self.feature_map_fourier),
 			("svm", SVC(C=C, probability=True, decision_function_shape='ovr'))])
 
-    def fit(self, X, y):
-    	self.clf.fit(X, y)
+	def fit(self, X, y):
+		self.clf.fit(X, y)
 
-    def predict(self, X):
-    	return self.clf.predict(X)
+	def predict(self, X):
+		return self.clf.predict(X)
 
-    def predict_proba(self, X):
-        return self.clf.predict_proba(X)
+	def predict_proba(self, X):
+		return self.clf.predict_proba(X)
