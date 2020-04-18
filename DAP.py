@@ -20,9 +20,10 @@ import matplotlib.pyplot as plt
 
 ## Scipy and sklearn
 from scipy.io import loadmat, savemat
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.svm import SVR
-from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import roc_curve, auc, f1_score, make_scorer, roc_auc_score
+from sklearn.exceptions import ConvergenceWarning
 
 ## Custom modules
 from utils import *
@@ -31,9 +32,10 @@ from SVMRegressor import SVMRegressor
 
 import warnings
 warnings.filterwarnings('ignore')
+# GridSearchCV prints warnings irrespective. 
 
 class DAP(object):
-	def __init__(self, data_dict, predicate_type = 'binary', rs = 42):
+	def __init__(self, data_dict, predicate_type = 'binary', rs = None, normalize = True):
 		'''
 			data_dict:
 				A dictionary with the following keys:
@@ -74,7 +76,7 @@ class DAP(object):
 		self.unseen_class_ids = data_dict['unseen_class_ids']
 		
 		self.unseen_data_input = data_dict['unseen_data_input']
-		self.unseen_data_output = data_dict['unseen_data_output']		
+		self.unseen_data_output = data_dict['unseen_data_output']	
 
 		self.num_attr = self.seen_attr_mat.shape[1]
 		self.num_seen_classes = self.seen_attr_mat.shape[0]
@@ -86,11 +88,16 @@ class DAP(object):
 
 		print ('Creating test dataset...')
 		self.X_test, self.a_test = self.unseen_data_input, self.unseen_attr_mat[self.unseen_data_output, :]
+
+		if(normalize):
+			self.X_train, self.a_train, self.X_test, self.a_test = self.preprocess(self.X_train, \
+										self.a_train, self.X_test, self.a_test, clamp_thresh = 3.0)
 		
 		self.clfs = []
 		if(self.binary): 
 			# skewedness = 80., n_components = 200, C = 300. # For cust data
-			for _ in range(self.num_attr): self.clfs.append(SVMClassifier(skewedness = 80., n_components = 200, C = 10., rs = rs))
+			# skewedness = 75, n_components = 200, C = 10., rs = rs
+			for _ in range(self.num_attr): self.clfs.append(SVMClassifier())
 		else: 
 			for _ in range(self.num_attr): self.clfs.append(SVMRegressor())
 
@@ -129,8 +136,55 @@ class DAP(object):
 		print('8. unseen_class_ids: (#unseen_classes, )')
 		print('######################\n')
 
-	def fit(self):
-		Xplat_train, Xplat_val, yplat_train, yplat_val = train_test_split(
+	def preprocess(self, seen_in, seen_out, unseen_in, unseen_out, clamp_thresh = 3.):
+		'''
+			Description:
+				Does mean normalization and clamping. 
+			Inputs:
+				seen_in: np.ndarray (num_seen_samples x num_features)
+				seen_out: np.ndarray (num_seen_samples x num_seen_classes)
+				unseen_in: np.ndarray (num_unseen_samples x num_features)
+				unseen_out: np.ndarray (num_unseen_samples x num_unseen_classes)
+			Returns
+				seen_in: np.ndarray (num_seen_samples x num_features)
+				seen_out: np.ndarray (num_seen_samples x num_seen_classes)
+				unseen_in: np.ndarray (num_unseen_samples x num_features)
+				unseen_out: np.ndarray (num_unseen_samples x num_unseen_classes)
+		'''
+		seen_mean = np.mean(seen_in, axis = 0)
+		seen_std = np.std(seen_in, axis = 0)
+		
+		## Mean normalization
+		seen_in -= seen_mean
+		seen_in /= seen_std
+		## Clamping
+		seen_in[seen_in > clamp_thresh] = clamp_thresh
+		seen_in[seen_in < -1 * clamp_thresh] = -1 * clamp_thresh
+		
+		## Mean normalization
+		unseen_in -= seen_mean
+		unseen_in /= seen_std
+		## Clamping
+		unseen_in[unseen_in > clamp_thresh] = clamp_thresh
+		unseen_in[unseen_in < -1 * clamp_thresh] = -1 * clamp_thresh
+
+		return seen_in, seen_out, unseen_in, unseen_out
+
+
+	def train(self, model, x_train, y_train, cv_parameters = None):
+		# Binary classification with cross validation
+		if(cv_parameters is None): 
+			model.fit(x_train, y_train)
+			return model
+		else:
+			clf = GridSearchCV(model, cv_parameters, cv = 5, n_jobs = -1, scoring = make_scorer(roc_auc_score))
+			clf.fit(x_train, y_train)
+			print(clf.best_params_)		
+			return clf.best_estimator_
+
+
+	def fit(self, cv_parameters = None):
+		Xplat_train, Xplat_val, aplat_train, aplat_val = train_test_split(
 			self.X_train, self.a_train, test_size=0.10, random_state = self.rs)
 	
 		a_pred = np.zeros(self.a_test.shape)
@@ -141,41 +195,40 @@ class DAP(object):
 			print ('--------- Attribute %d/%d ---------' % (idx+1, self.num_attr))
 			t0 = time()
 
-			if(self.binary):
-				temp = self.a_train[:,idx]
-				alph = temp.sum() / len(temp)
-				# c_wt = {0: alph, 1: (1 - alph)}
-				c_wt = {0: 0.5/(1-alph), 1: 0.5/alph} # 'balanced'
-				# c_wt = {0: 5/(1-alph), 1: 5/alph} # 10*'balanced'
+			# Training and do hyper-parameter search
+			self.clfs[idx].clf = self.train(self.clfs[idx].clf, Xplat_train, aplat_train[:,idx], cv_parameters)
 
-				# print(self.clfs[idx].clf.get_params().keys())
-				self.clfs[idx].clf.set_params(svm__class_weight = c_wt)
-
-			# Training
-			self.clfs[idx].fit(self.X_train, self.a_train[:,idx])
 			print ('Fitted classifier in: %fs' % (time() - t0))
-			if(self.binary): self.clfs[idx].set_platt_params(Xplat_val, yplat_val[:,idx])
+			a_pred_train = self.clfs[idx].predict(Xplat_train)
+			if(self.binary):
+				self.clfs[idx].set_platt_params(Xplat_val, aplat_val[:,idx])
+				f1_score_c0 = f1_score(aplat_train[:, idx], a_pred_train, pos_label = 0)
+				f1_score_c1 = f1_score(aplat_train[:, idx], a_pred_train, pos_label = 1)
+				print('Train F1 scores: %.02f, %.02f'%(f1_score_c0, f1_score_c1))			
 
 			# Predicting
-			print ('Predicting for attribute %d...' % (idx+1))
 			a_pred[:,idx] = self.clfs[idx].predict(self.X_test)
-			if(self.binary): a_proba[:,idx] = self.clfs[idx].predict_proba(self.X_test)
-
+			if(self.binary):
+				a_proba[:,idx] = self.clfs[idx].predict_proba(self.X_test)
+				f1_score_c0 = f1_score(self.a_test[:, idx], a_pred[:,idx], pos_label = 0)
+				f1_score_c1 = f1_score(self.a_test[:, idx], a_pred[:,idx], pos_label = 1)
+				print('Test F1 scores: %.02f, %.02f'%(f1_score_c0, f1_score_c1))
+			
 			print ('Saving files...')
 			np.savetxt(join(self.write_dir, 'prediction_SVM'), a_pred)
-			if(self.binary):
-				np.savetxt(join(self.write_dir, 'platt_params_SVM'), platt_params) ## REDUNDANT
-				np.savetxt(join(self.write_dir, 'probabilities_SVM'), a_proba)
+			if(self.binary): np.savetxt(join(self.write_dir, 'probabilities_SVM'), a_proba)
 		
 		self.a_pred = a_pred
 		self.a_proba = a_proba
 
 		return a_pred, a_proba
 
-	def evaluate(self):
-		# P = self.a_proba
-		P = np.loadtxt(join(self.write_dir, 'probabilities_SVM')) # (n, 85)
-		self.a_proba = P
+	def evaluate(self, prob_fpath = None):
+		if(prob_fpath is None):
+			P = np.loadtxt(join(self.write_dir, 'probabilities_SVM')) # (n, 85)
+			self.a_proba = P
+		else:
+			P = self.a_proba
 
 		prior = np.mean(self.seen_attr_mat, axis=0)
 		prior[prior==0.] = 0.5
@@ -201,18 +254,26 @@ class DAP(object):
 		return confusion, np.asarray(prob), L
 
 if __name__ == '__main__':
-	data_path = r'/home/isat-deep/Desktop/Naveen/fg2020/data/cust_feat_data/data_0.61305.mat'
-	classes = ['A', 'B', 'C', 'D', 'E']
-	data = reformat_dstruct(data_path)
+	### To test on gestures ###
+	# data_path = r'/home/isat-deep/Desktop/Naveen/fg2020/data/cust_feat_data/data_0.61305.mat'
+	# classes = ['A', 'B', 'C', 'D', 'E']
+	# data = reformat_dstruct(data_path)
+	# normalize = True
+	# parameters = {'fp__skewedness': [4., 10., 20.],
+	# 			  'fp__n_components': [50],
+	# 			  'svm__C': [1., 10.]}		
+	###########################
 
-	# classes = loadstr('testclasses.txt')
+	####### To test on awa #######
+	# # This is to convert awa data to a compatible format.
 	# data = awa_to_dstruct()
+	# parameters = None	
+	# normalize = False
+	##############################
 
 	p_type = 'binary'
-	dap = DAP(data, predicate_type = p_type)
-	dap.pprint()
-
-	dap.fit()
+	dap = DAP(data, predicate_type = p_type, normalize = normalize)
+	dap.fit(parameters)
 
 	attributepattern = 'DAP_' + p_type + '/probabilities_' + 'SVM'
 	confusion, prob, L = dap.evaluate()

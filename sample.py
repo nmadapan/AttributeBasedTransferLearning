@@ -3,26 +3,47 @@ import numpy as np
 import sys
 from os.path import join
 from sklearn.kernel_approximation import SkewedChi2Sampler
+import time
 
-seed = 23
+from sklearn.datasets import load_digits
+from sklearn.svm import SVC
+from sklearn.model_selection import cross_validate
 
-sk = SkewedChi2Sampler(skewedness=0.1,	n_components=1) # , random_state = seed
+from sklearn.metrics.pairwise import linear_kernel
 
-# np.random.seed(seed)
-# X = np.random.rand(6, 3)
-X = np.array(
-	[[0.51729788, 0.9469626,  0.76545976],
- 	[0.28239584, 0.22104536, 0.68622209],
- 	[0.1671392,  0.39244247, 0.61805235],
- 	[0.41193009, 0.00246488, 0.88403218],
- 	[0.88494754, 0.30040969, 0.58958187],
- 	[0.97842692, 0.84509382, 0.06507544]]
-	)
+from SVMClassifier import SVMClassifier
 
-Xp = sk.fit_transform(X)
+from sklearn.exceptions import ConvergenceWarning
 
-print(X)
-print(Xp)
+# digits = load_digits()
+# X, y = digits.data,digits.target
+# print(X.shape)
+
+# start = time.time()
+
+# multi_core_learning = cross_validate(SVC(), X, y, cv=150, n_jobs=1)
+
+# print('Time taken: %.02f secs'%(time.time()-start))
+
+# seed = 23
+
+# sk = SkewedChi2Sampler(skewedness=0.1,	n_components=1) # , random_state = seed
+
+# # np.random.seed(seed)
+# # X = np.random.rand(6, 3)
+# X = np.array(
+# 	[[0.51729788, 0.9469626,  0.76545976],
+#  	[0.28239584, 0.22104536, 0.68622209],
+#  	[0.1671392,  0.39244247, 0.61805235],
+#  	[0.41193009, 0.00246488, 0.88403218],
+#  	[0.88494754, 0.30040969, 0.58958187],
+#  	[0.97842692, 0.84509382, 0.06507544]]
+# 	)
+
+# Xp = sk.fit_transform(X)
+
+# print(X)
+# print(Xp)
 
 # data_path = r'/home/isat-deep/Desktop/Naveen/fg2020/data/raw_feat_data/data_0.11935.mat'
 # x = loadmat(data_path, struct_as_record = False, squeeze_me = True)['dstruct']
