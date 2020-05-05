@@ -9,7 +9,7 @@ class SVMRegressor(BaseEstimator):
     def __init__(self, skewedness=3., n_components=85, C=100):
     	self.platt_params = []
     	self.feature_map_fourier = SkewedChi2Sampler(skewedness=skewedness,	n_components=n_components)
-    	self.clf = Pipeline([("feature_map", self.feature_map_fourier),
+    	self.clf = Pipeline([("fp", self.feature_map_fourier),
 			                 ("svm", SVR(C=C))
                             ])
 
@@ -17,7 +17,7 @@ class SVMRegressor(BaseEstimator):
     	self.clf.fit(X, y)
 
     def set_platt_params(self, X, y):
-    	y_pred = self.clf.predict(X)
+    	y_pred = self.clf.predict(X) # For SVR, predict() gives a score. 
     	self.platt_params = SigmoidTrain(y_pred, y)
 
     def predict(self, X):
@@ -30,8 +30,8 @@ class SVMRegressor(BaseEstimator):
 class SVMRegressorIAP(BaseEstimator):
     def __init__(self, skewedness=3., n_components=85, C=100.):
     	self.feature_map_fourier = SkewedChi2Sampler(skewedness=skewedness,	n_components=n_components)
-    	self.clf = Pipeline([("feature_map", self.feature_map_fourier),
-			("svm", SVC(C=C, probability=True, decision_function_shape='ovr'))])
+    	self.clf = Pipeline([("fp", self.feature_map_fourier),
+			("svm", SVR(C=C))]) ## TODO: Check it. There is a bug in the original code. 
 
     def fit(self, X, y):
     	self.clf.fit(X, y)

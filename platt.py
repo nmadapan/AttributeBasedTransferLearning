@@ -120,12 +120,12 @@ def SigmoidTrain(deci, label, prior1=None, prior0=None):
 #reads decision_value and Platt parameter [A,B]
 #outputs predicted probability
 def SigmoidPredict(deci, AB):
-    from numpy import exp,zeros
-    A, B = AB
-    fApB = deci * A + B
-    
-    prob=zeros(fApB.shape)
-    pos_pred = fApB>0
-    prob[pos_pred] = exp(-fApB[pos_pred])/(1.0+exp(-fApB[pos_pred]))
-    prob[~pos_pred] = 1.0/(1+exp(fApB[~pos_pred])) 
-    return prob
+	from numpy import exp,zeros
+	A, B = AB
+	fApB = deci * A + B
+
+	prob=zeros(fApB.shape)
+	pos_pred = fApB>0
+	prob[pos_pred] = exp(-fApB[pos_pred])/(1.0+exp(-fApB[pos_pred]))
+	prob[~pos_pred] = 1.0/(1+exp(fApB[~pos_pred])) 
+	return prob

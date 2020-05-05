@@ -15,7 +15,7 @@ Required files
 	* ./numexamples.txt
 	* ./testclasses.txt
 	* ./trainclasses.txt
-	* ./predicate-matrix-binary.txt
+	* ./predicate-matrix-{binary}.txt # when predicate_type = 'binary'
 	* ./CreatedData/train_features_index.txt
 	* ./CreatedData/test_features_index.txt
 	* ./CreatedData/train_featuresVGG19.pic.bz2

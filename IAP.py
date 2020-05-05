@@ -1,6 +1,6 @@
 '''
-	This script has a class (DAP) that facilitates attribute prediction
-	using Direct Attribute Prediction (DAP) approach proposed by 
+	This script has a class (IAP) that facilitates attribute prediction
+	using Indirect Attribute Prediction (IAP) approach proposed by 
 	Lampert et al. in 2009 and 2014. 
 
 	It is adapted from the GitHub repository of Charles. 
@@ -22,19 +22,19 @@ import matplotlib.pyplot as plt
 from scipy.io import loadmat, savemat
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.svm import SVR
-from sklearn.metrics import roc_curve, auc, f1_score, make_scorer, roc_auc_score
+from sklearn.metrics import roc_curve, auc, f1_score, make_scorer, roc_auc_score, accuracy_score
 from sklearn.exceptions import ConvergenceWarning
 
 ## Custom modules
 from utils import *
-from SVMClassifier import SVMClassifier
-from SVMRegressor import SVMRegressor
+from SVMClassifier import SVMClassifierIAP
+from SVMRegressor import SVMRegressorIAP
 
 import warnings
 warnings.filterwarnings('ignore')
 # GridSearchCV prints warnings irrespective. 
 
-class DAP(object):
+class IAP(object):
 	def __init__(self, data_dict, predicate_type = 'binary', rs = None, normalize = True):
 		'''
 			data_dict:
@@ -60,7 +60,7 @@ class DAP(object):
 		self.binary = (predicate_type == 'binary')
 
 		## Write the files and results into this directory
-		self.write_dir = './DAP_' + self.predicate_type
+		self.write_dir = './IAP_' + self.predicate_type
 		try:
 			if(not isdir(self.write_dir)): os.makedirs(self.write_dir)
 		except Exception as exp: 
@@ -86,24 +86,19 @@ class DAP(object):
 		## Create training Dataset
 		print ('Creating training dataset...')
 		self.X_train = self.seen_data_input
-		self.a_train = self.seen_attr_mat[self.seen_data_output, :]
+		self.y_train = self.seen_data_output
 
 		## Create testing Dataset
 		print ('Creating test dataset...')
 		self.X_test = self.unseen_data_input
-		self.a_test = self.unseen_attr_mat[self.unseen_data_output, :]
+		self.y_test = self.unseen_data_output
 
 		if(normalize):
-			self.X_train, self.a_train, self.X_test, self.a_test = self.preprocess(\
-				self.X_train, self.a_train, self.X_test, self.a_test, clamp_thresh = 3.0)
+			self.X_train, _, self.X_test, _ = self.preprocess(\
+				self.X_train, None, self.X_test, None, clamp_thresh = 3.0)
 		
-		self.clfs = []
-		if(self.binary): 
-			# skewedness = 80., n_components = 200, C = 300. # For cust data
-			# skewedness = 75, n_components = 200, C = 10., rs = rs
-			for _ in range(self.num_attr): self.clfs.append(SVMClassifier())
-		else: 
-			for _ in range(self.num_attr): self.clfs.append(SVMRegressor())
+		# Irrespective of binary true or false, we should do classification first. 
+		self.clf = SVMClassifierIAP()
 
 		self.pprint()
 
@@ -174,7 +169,6 @@ class DAP(object):
 
 		return seen_in, seen_out, unseen_in, unseen_out
 
-
 	def train(self, model, x_train, y_train, cv_parameters = None):
 		# Binary classification with cross validation
 		if(cv_parameters is None): 
@@ -184,60 +178,52 @@ class DAP(object):
 			## When n_jobs = None, it is taking slightly more time to run than n_jobs = -1 (Equivalent to #processors)
 			# However, when n_jobs is -1, it prints a lot of ConvergenceWarning by sklearn. 
 			clf = GridSearchCV(model, cv_parameters, cv = 5, n_jobs = None, \
-								scoring = make_scorer(roc_auc_score))
+								scoring = make_scorer(accuracy_score)) ## TODO: CHeck it. which score. 
 			clf.fit(x_train, y_train)
 			print(clf.best_params_)		
 			return clf.best_estimator_
 
-
 	def fit(self, cv_parameters = None):
-		Xplat_train, Xplat_val, aplat_train, aplat_val = train_test_split(
-			self.X_train, self.a_train, test_size=0.10, random_state = self.rs)
-	
-		a_pred = np.zeros(self.a_test.shape)
-		a_proba = np.copy(a_pred)
+		y_pred = np.zeros(self.y_test.shape)
+		y_proba = np.zeros((y_pred.shape[0], self.num_seen_classes))
 
-		platt_params = []
-		for idx in range(self.num_attr):
-			print ('--------- Attribute %d/%d ---------' % (idx+1, self.num_attr))
-			t0 = time()
+		print('Training model... (takes around 10 min)')
+		t0 = time()
+		self.clf.clf = self.train(self.clf.clf, self.X_train, self.y_train, cv_parameters)
+		# self.clf.fit(self.X_train, self.y_train)
+		print('Training finished in %.02f secs'%(time() - t0))
 
-			# Training and do hyper-parameter search
-			self.clfs[idx].clf = self.train(self.clfs[idx].clf, Xplat_train, \
-											aplat_train[:,idx], cv_parameters)
-			print ('Fitted classifier in: %fs' % (time() - t0))
-			a_pred_train = self.clfs[idx].predict(Xplat_train)
-			# Predicting
-			a_pred[:,idx] = self.clfs[idx].predict(self.X_test)
+		## Train evaluation
+		y_pred_train = self.clf.predict(self.X_train)
+		y_proba_train = self.clf.predict_proba(self.X_train)		
+		acc = accuracy_score(self.y_train, y_pred_train)
+		print('Train Accuracy: %.02f'%acc)
 
-			if(self.binary):
-				## Training data
-				self.clfs[idx].set_platt_params(Xplat_val, aplat_val[:,idx])
-				f1_score_c0 = f1_score(aplat_train[:, idx], a_pred_train, pos_label = 0)
-				f1_score_c1 = f1_score(aplat_train[:, idx], a_pred_train, pos_label = 1)
-				print('Train F1 scores: %.02f, %.02f'%(f1_score_c0, f1_score_c1))			
-				## Testing data
-				a_proba[:,idx] = self.clfs[idx].predict_proba(self.X_test)
-				f1_score_c0 = f1_score(self.a_test[:, idx], a_pred[:,idx], pos_label = 0)
-				f1_score_c1 = f1_score(self.a_test[:, idx], a_pred[:,idx], pos_label = 1)
-				print('Test F1 scores: %.02f, %.02f'%(f1_score_c0, f1_score_c1))
-			
-			print ('Saving files...')
-			np.savetxt(join(self.write_dir, 'prediction_SVM'), a_pred)
-			if(self.binary): np.savetxt(join(self.write_dir, 'probabilities_SVM'), a_proba)
+		## Testing evaluation
+		y_pred = self.clf.predict(self.X_test)
+		y_proba = self.clf.predict_proba(self.X_test)		
+		acc = accuracy_score(self.y_test, y_pred)
+		print('Test Accuracy: %.02f'%acc)
+
+		print ('Saving files...')
+		np.savetxt(join(self.write_dir, 'prediction_SVM'), y_pred)
+		np.savetxt('./IAP/prediction_SVM', y_pred)
+		np.savetxt('./IAP/probabilities_SVM', y_proba)
 		
-		self.a_pred = a_pred
-		self.a_proba = a_proba
+		self.y_pred = y_pred
+		self.y_proba = y_proba
 
-		return a_pred, a_proba
+		return y_pred, y_proba
 
 	def evaluate(self, prob_fpath = None):
 		M = self.unseen_attr_mat # (10,85)
 		prob=[] # (n, 10)
 
+		if(prob_fpath is None): P = self.y_proba # (n, 85)
+		else: P = np.loadtxt(join(self.write_dir, 'probabilities_SVM')) # (n, 85)
+		P = np.dot(P, self.seen_attr_mat)
+
 		if(self.binary):
-			if(prob_fpath is None): P = self.a_proba # (n, 85)
-			else: P = np.loadtxt(join(self.write_dir, 'probabilities_SVM')) # (n, 85)
 			prior = np.mean(self.seen_attr_mat, axis=0)
 			prior[prior==0.] = 0.5
 			prior[prior==1.] = 0.5    # disallow degenerated priors
@@ -245,8 +231,6 @@ class DAP(object):
 				prob.append(np.prod(M*p + (1-M)*(1-p),axis=1)/\
 							np.prod(M*prior+(1-M)*(1-prior), axis=1) )			
 		else:
-			if(prob_fpath is None): P = self.a_pred # (n, 85)
-			else: P = np.loadtxt(join(self.write_dir, 'prediction_SVM')) # (n, 85)
 			Md = np.copy(M).astype(np.float)
 			Md /= np.linalg.norm(Md, axis = 1, keepdims = True)
 			for p in P:
@@ -270,10 +254,10 @@ if __name__ == '__main__':
 	classes = ['A', 'B', 'C', 'D', 'E']
 	data = reformat_dstruct(data_path)
 	normalize = True
-	parameters = {'fp__skewedness': [4., 6., 10.],
+	parameters = {'fp__skewedness': [4.], # 4., 6., 10.
 				  'fp__n_components': [50],
-				  'svm__C': [1., 10.]}		
-	p_type = 'binary'
+				  'svm__C': [10.]} # 1., 10.
+	p_type = 'binary2'
 	print('Gesture Data ... ', p_type)
 	###########################
 
@@ -287,20 +271,21 @@ if __name__ == '__main__':
 	# p_type = 'binary'
 	##############################
 
-	dap = DAP(data, predicate_type = p_type, normalize = normalize)
+	iap = IAP(data, predicate_type = p_type, normalize = normalize)
 	start = time()
-	dap.fit(parameters)
+	iap.fit(parameters)
 	print('Total time taken: %.02f secs'%(time()-start))
 
-	attributepattern = 'DAP_' + p_type + '/probabilities_' + 'SVM'
-	confusion, prob, L = dap.evaluate()
+	attributepattern = 'IAP_' + p_type + '/probabilities_' + 'SVM'
+	confusion, prob, L = iap.evaluate()
 	
-	wpath = join(dap.write_dir, 'AwA-ROC-confusion-DAP-'+p_type+'-SVM.pdf')
+	wpath = join(iap.write_dir, 'AwA-ROC-confusion-IAP-'+p_type+'-SVM.pdf')
 	plot_confusion(confusion, classes, wpath)
-
-	wpath = join(dap.write_dir, 'AwA-ROC-DAP-SVM.pdf')
-	plot_roc(prob, L, classes, wpath)
-
-	wpath = join(dap.write_dir, 'AwA-AttAUC-DAP-SVM.pdf')
-	plot_attAUC(dap.a_proba, dap.a_test, wpath)
 	print ("Mean class accuracy %g" % np.mean(np.diag(confusion)*100))
+
+	# wpath = join(iap.write_dir, 'AwA-ROC-IAP-SVM.pdf')
+	# plot_roc(prob, L, classes, wpath)
+
+	## TODO: Why are these two not working. 
+	# wpath = join(iap.write_dir, 'AwA-AttAUC-IAP-SVM.pdf')
+	# plot_attAUC(iap.y_proba, iap.y_test, wpath)

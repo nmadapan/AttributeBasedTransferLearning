@@ -18,6 +18,9 @@ iris = datasets.load_iris()
 # Take the first two features. We could avoid this by using a two-dim dataset
 X = iris.data[:, :2]
 y = iris.target
+temp = np.logical_or(y == 0, y == 1)
+y = y[temp]
+X = X[temp, :]
 
 x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.33, stratify=y, random_state = 42)
 
@@ -35,6 +38,8 @@ obj = svm.LinearSVC(C=C, class_weight = 'balanced')
 obj.fit(x_train, y_train)
 
 y_pred = obj.predict(x_test)
+print(obj.decision_function(x_test))
+print(y_pred)
 
 cm = confusion_matrix(y_test, y_pred)
 
