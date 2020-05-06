@@ -13,6 +13,7 @@ import os, sys
 from os.path import isdir, join, basename, dirname
 from time import time
 import random
+import pickle
 
 # NumPy and plotting
 import numpy as np
@@ -66,46 +67,37 @@ class DAP(object):
 		except Exception as exp: 
 			print(exp)
 
-		## Seen Unseen data
-		self.seen_data_input = data_dict['seen_data_input']
-		self.seen_data_output = data_dict['seen_data_output']
-		
-		self.seen_attr_mat = data_dict['seen_attr_mat']
-		self.unseen_attr_mat = data_dict['unseen_attr_mat']
+		self.requirements() # Prints data requirements
 
-		self.seen_class_ids = data_dict['seen_class_ids']
-		self.unseen_class_ids = data_dict['unseen_class_ids']
-		
-		self.unseen_data_input = data_dict['unseen_data_input']
-		self.unseen_data_output = data_dict['unseen_data_output']	
-
-		self.num_attr = self.seen_attr_mat.shape[1]
-		self.num_seen_classes = self.seen_attr_mat.shape[0]
-		self.num_unseen_classes = self.unseen_attr_mat.shape[0]
-
-		## Create training Dataset
-		print ('Creating training dataset...')
-		self.X_train = self.seen_data_input
-		self.a_train = self.seen_attr_mat[self.seen_data_output, :]
-
-		## Create testing Dataset
-		print ('Creating test dataset...')
-		self.X_test = self.unseen_data_input
-		self.a_test = self.unseen_attr_mat[self.unseen_data_output, :]
-
-		if(normalize):
-			self.X_train, self.a_train, self.X_test, self.a_test = self.preprocess(\
-				self.X_train, self.a_train, self.X_test, self.a_test, clamp_thresh = 3.0)
-		
+		## Variables updated  by a call to initialize_data_vars()
+		self.seen_data_input, self.seen_data_output = None, None
+		self.seen_attr_mat, self.unseen_attr_mat = None, None
+		self.seen_class_ids, self.unseen_class_ids = None, None
+		self.unseen_data_input, self.unseen_data_output = None, None
+		self.num_seen_classes, self.num_unseen_classes = None, None
+		self.X_train, self.a_train = None, None
+		self.X_test, self.a_test = None, None
 		self.clfs = []
-		if(self.binary): 
-			# skewedness = 80., n_components = 200, C = 300. # For cust data
-			# skewedness = 75, n_components = 200, C = 10., rs = rs
-			for _ in range(self.num_attr): self.clfs.append(SVMClassifier())
-		else: 
-			for _ in range(self.num_attr): self.clfs.append(SVMRegressor())
+		self.num_attr = None
 
-		self.pprint()
+		## Variables udpated by a call to preprocess()
+		self.seen_mean, self.seen_std = None, None
+
+		## Variables updated by fit(): For unseen data
+		self.a_pred = None # Predicted scores of attributes
+		self.a_proba = None # Predicted probabilities of attributes
+		self.unseen_fscores = None # f-scores of attributes
+
+		## Variables updated by evaluate(): Unseen data
+		self.confusion_matrix = None # np.ndarray of shape (num_unseen_samples x num_seen_classes)
+		self.class_prob_matrix = None # probabilities of unseen classes
+
+		## Variables updated by generate_results
+		self.class_auc = None # AUC of each class
+		self.unseen_class_roc_curve = None # list of false positive and true positives of each class
+		self.unseen_attr_auc = None # AUC of each attribute
+
+		self.initialize_data_vars(data_dict)
 
 	def pprint(self):
 		print('######################')
@@ -140,20 +132,67 @@ class DAP(object):
 		print('8. unseen_class_ids: (#unseen_classes, )')
 		print('######################\n')
 
-	def preprocess(self, seen_in, seen_out, unseen_in, unseen_out, clamp_thresh = 3.):
+	def initialize_data_vars(self, data_dict):
+		## Seen Unseen data I/O
+		self.seen_data_input = data_dict['seen_data_input']
+		self.seen_data_output = data_dict['seen_data_output']
+		self.unseen_data_input = data_dict['unseen_data_input']
+		self.unseen_data_output = data_dict['unseen_data_output']
+		
+		self.seen_attr_mat = data_dict['seen_attr_mat']
+		self.unseen_attr_mat = data_dict['unseen_attr_mat']
+
+		self.seen_class_ids = data_dict['seen_class_ids']
+		self.unseen_class_ids = data_dict['unseen_class_ids']
+		
+		self.num_attr = self.seen_attr_mat.shape[1]
+		self.num_seen_classes = self.seen_attr_mat.shape[0]
+		self.num_unseen_classes = self.unseen_attr_mat.shape[0]
+
+		## Create training Dataset
+		print ('Creating training dataset...')
+		self.X_train = self.seen_data_input
+		self.a_train = self.seen_attr_mat[self.seen_data_output, :]
+
+		## Create testing Dataset
+		print ('Creating test dataset...')
+		self.X_test = self.unseen_data_input
+		self.a_test = self.unseen_attr_mat[self.unseen_data_output, :]
+
+		if(normalize):
+			## Updates self.seen_mean and self.seen_std
+			self.X_train, self.X_test = self.preprocess(self.X_train, self.X_test, clamp_thresh = 3.0)
+		
+		self.clfs = []
+		if(self.binary): 
+			for _ in range(self.num_attr): self.clfs.append(SVMClassifier())
+		else: 
+			for _ in range(self.num_attr): self.clfs.append(SVMRegressor())
+
+		self.pprint()
+
+	def _clear_data_vars(self):
+		self.X_train, self.a_train = None, None
+		self.X_test, self.a_test = None, None
+		self.seen_data_input, self.seen_data_output = None, None
+		self.unseen_data_input, self.unseen_data_output = None, None
+		self.a_pred, self.a_proba = None, None
+
+	def save(self, fname):
+		self._clear_data_vars()
+		with open(join(self.write_dir, fname), 'wb') as fp:
+			pickle.dump({'self': self}, fp)
+
+	def preprocess(self, seen_in, unseen_in, clamp_thresh = 3.):
 		'''
 			Description:
 				Does mean normalization and clamping. 
 			Inputs:
 				seen_in: np.ndarray (num_seen_samples x num_features)
-				seen_out: np.ndarray (num_seen_samples x num_seen_classes)
 				unseen_in: np.ndarray (num_unseen_samples x num_features)
-				unseen_out: np.ndarray (num_unseen_samples x num_unseen_classes)
 			Returns
 				seen_in: np.ndarray (num_seen_samples x num_features)
-				seen_out: np.ndarray (num_seen_samples x num_seen_classes)
 				unseen_in: np.ndarray (num_unseen_samples x num_features)
-				unseen_out: np.ndarray (num_unseen_samples x num_unseen_classes)
 		'''
 		seen_mean = np.mean(seen_in, axis = 0)
 		seen_std = np.std(seen_in, axis = 0)
@@ -172,8 +211,10 @@ class DAP(object):
 		unseen_in[unseen_in > clamp_thresh] = clamp_thresh
 		unseen_in[unseen_in < -1 * clamp_thresh] = -1 * clamp_thresh
 
-		return seen_in, seen_out, unseen_in, unseen_out
+		self.seen_mean = seen_mean
+		self.seen_std = seen_std
 
+		return seen_in, unseen_in
 
 	def train(self, model, x_train, y_train, cv_parameters = None):
 		# Binary classification with cross validation
@@ -189,13 +230,13 @@ class DAP(object):
 			print(clf.best_params_)		
 			return clf.best_estimator_
 
-
 	def fit(self, cv_parameters = None):
 		Xplat_train, Xplat_val, aplat_train, aplat_val = train_test_split(
 			self.X_train, self.a_train, test_size=0.10, random_state = self.rs)
 	
 		a_pred = np.zeros(self.a_test.shape)
 		a_proba = np.copy(a_pred)
+		unseen_fscores = []
 
 		platt_params = []
 		for idx in range(self.num_attr):
@@ -220,6 +261,7 @@ class DAP(object):
 				a_proba[:,idx] = self.clfs[idx].predict_proba(self.X_test)
 				f1_score_c0 = f1_score(self.a_test[:, idx], a_pred[:,idx], pos_label = 0)
 				f1_score_c1 = f1_score(self.a_test[:, idx], a_pred[:,idx], pos_label = 1)
+				unseen_fscores.append([f1_score_c0, f1_score_c1])
 				print('Test F1 scores: %.02f, %.02f'%(f1_score_c0, f1_score_c1))
 			
 			print ('Saving files...')
@@ -228,6 +270,7 @@ class DAP(object):
 		
 		self.a_pred = a_pred
 		self.a_proba = a_proba
+		self.unseen_fscores = np.array(unseen_fscores)
 
 		return a_pred, a_proba
 
@@ -262,7 +305,30 @@ class DAP(object):
 
 		confusion /= confusion.sum(axis = 1, keepdims = True)
 
+		self.confusion_matrix = confusion
+		self.class_prob_matrix = np.asarray(prob)
+
 		return confusion, np.asarray(prob), self.unseen_data_output
+
+	def generate_results(self, classes, confusion_mat, prob_mat, unseen_labels):
+		wpath = join(self.write_dir, 'AwA-ROC-confusion-DAP-'+p_type+'-SVM.pdf')
+		plot_confusion(confusion_mat, classes, wpath)
+
+		wpath = join(self.write_dir, 'AwA-ROC-DAP-SVM.pdf')
+		unseen_class_auc, unseen_class_roc_curve = plot_roc(prob_mat, unseen_labels, classes, wpath)
+		# An np.ndarray of shape (num_unseen_classes, ). Each element is the AUC of that unseen class. 
+		self.unseen_class_auc = unseen_class_auc
+		# A list of size (num_unseen_classes). Each element is a np.ndarray of shape (_ x 2). 
+		# First column is true positives and second column is false positives. 
+		self.unseen_class_roc_curve = unseen_class_roc_curve 
+
+		wpath = join(self.write_dir, 'AwA-AttAUC-DAP-SVM.pdf')
+		unseen_attr_auc = plot_attAUC(self.a_proba, self.a_test, wpath)
+		# An np.ndarray of shape (num_attr, ). Each element is an AUC of that attribute. 
+		self.unseen_attr_auc = unseen_attr_auc
+
+		print ("Mean class accuracy %g" % np.mean(np.diag(confusion_mat)*100))
+
 
 if __name__ == '__main__':
 	### To test on gestures ###
@@ -270,9 +336,9 @@ if __name__ == '__main__':
 	classes = ['A', 'B', 'C', 'D', 'E']
 	data = reformat_dstruct(data_path)
 	normalize = True
-	parameters = {'fp__skewedness': [4., 6., 10.],
+	parameters = {'fp__skewedness': [6.], # [4., 6., 10.]
 				  'fp__n_components': [50],
-				  'svm__C': [1., 10.]}		
+				  'svm__C': [1.]} # [1., 10.]
 	p_type = 'binary'
 	print('Gesture Data ... ', p_type)
 	###########################
@@ -292,15 +358,6 @@ if __name__ == '__main__':
 	dap.fit(parameters)
 	print('Total time taken: %.02f secs'%(time()-start))
 
-	attributepattern = 'DAP_' + p_type + '/probabilities_' + 'SVM'
 	confusion, prob, L = dap.evaluate()
-	
-	wpath = join(dap.write_dir, 'AwA-ROC-confusion-DAP-'+p_type+'-SVM.pdf')
-	plot_confusion(confusion, classes, wpath)
-
-	wpath = join(dap.write_dir, 'AwA-ROC-DAP-SVM.pdf')
-	plot_roc(prob, L, classes, wpath)
-
-	wpath = join(dap.write_dir, 'AwA-AttAUC-DAP-SVM.pdf')
-	plot_attAUC(dap.a_proba, dap.a_test, wpath)
-	print ("Mean class accuracy %g" % np.mean(np.diag(confusion)*100))
+	dap.generate_results(classes, confusion, prob, L)
+	dap.save('p_' + basename(data_path)[:-4] + '.pickle')

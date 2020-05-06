@@ -15,6 +15,17 @@ from SVMClassifier import SVMClassifier
 
 from sklearn.exceptions import ConvergenceWarning
 
+import pickle
+
+from DAP import DAP
+from utils import *
+
+with open('./DAP_binary/p_data_0.61305.pickle', 'rb') as fp:
+	obj = pickle.load(fp)
+dap = obj['self']
+
+print_dict(dap.__dict__)
+
 # digits = load_digits()
 # X, y = digits.data,digits.target
 # print(X.shape)

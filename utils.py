@@ -153,12 +153,12 @@ def awa_to_dstruct(predicate_type = 'binary'):
 ######################################################
 
 def plot_confusion(confusion, classes, wpath = ''):
-	fig=plt.figure(figsize=(10,9))
+	fig=plt.figure()
 	plt.imshow(confusion,interpolation='nearest',origin='upper')
 	plt.clim(0,1)
-	plt.xticks(np.arange(0,10),[c.replace('+',' ') for c in classes],rotation='vertical',fontsize=24)
-	plt.yticks(np.arange(0,10),[c.replace('+',' ') for c in classes],fontsize=24)
-	plt.axis([-.5,9.5,9.5,-.5])
+	plt.xticks(np.arange(0,len(classes)),[c.replace('+',' ') for c in classes],rotation='vertical',fontsize=24)
+	plt.yticks(np.arange(0,len(classes)),[c.replace('+',' ') for c in classes],fontsize=24)
+	plt.axis([-.5, len(classes)-.5, -.5, len(classes)-.5])
 	plt.setp(plt.gca().xaxis.get_major_ticks(), pad=18)
 	plt.setp(plt.gca().yaxis.get_major_ticks(), pad=12)
 	fig.subplots_adjust(left=0.30)
@@ -196,14 +196,17 @@ def plot_roc(P, GT, classes, wpath = ''):
 	plt.legend(loc='lower right')
 	plt.xticks([0.0,0.2,0.4,0.6,0.8,1.0], [r'$0$', r'$0.2$',r'$0.4$',r'$0.6$',r'$0.8$',r'$1.0$'],fontsize=18)
 	plt.yticks([0.0,0.2,0.4,0.6,0.8,1.0], [r'$0$', r'$0.2$',r'$0.4$',r'$0.6$',r'$0.8$',r'$1.0$'],fontsize=18)
-	plt.xlabel('false negative rate',fontsize=18)
+	plt.xlabel('false positive rate',fontsize=18)
 	plt.ylabel('true positive rate',fontsize=18)
-	plt.savefig(wpath)
+	if(len(wpath) == 0): plt.show()
+	else: plt.savefig(wpath)
+	return AUC, CURVE
 
 
-def plot_attAUC(P, y_true, wpath):
+def plot_attAUC(P, y_true, wpath, attributes = None):
 	AUC=[]
-	attributes = get_attributes()
+	if(attributes is None):
+		attributes = map(str, range(y_true.shape[1]))
 
 	for i in range(y_true.shape[1]):
 		fp, tp, _ = roc_curve(y_true[:,i],  P[:,i])
@@ -214,14 +217,17 @@ def plot_attAUC(P, y_true, wpath):
 	xs = np.arange(y_true.shape[1])
 	width = 0.5
 
-	fig = plt.figure(figsize=(15,5))
+	# fig = plt.figure(figsize=(15,5))
+	fig = plt.figure()
 	ax = fig.add_subplot(1,1,1)
 	rects = ax.bar(xs, AUC, width, align='center')
 	ax.set_xticks(xs)
 	ax.set_xticklabels(attributes,  rotation=90)
 	ax.set_ylabel("area under ROC curve")
 	autolabel(rects, ax)
-	plt.savefig(wpath)
+	if(len(wpath) == 0): plt.show()
+	else: plt.savefig(wpath)
+	return AUC
 
 ######################################################
 ################## General functions #################
@@ -231,9 +237,20 @@ def bzPickle(obj,filename):
 	f = bz2.BZ2File(filename, 'wb')
 	cPickle.dump(obj, f)
 	f.close()
-	
+
 def bzUnpickle(filename):
 	return cPickle.load(bz2.BZ2File(filename))
+
+def print_dict(dict_inst, idx = 1):
+	for key, value in dict_inst.items():
+		if(isinstance(value, dict)):
+			print('\t'*(idx-1), key, ': ')
+			print_dict(value, idx = idx+1)
+		else:
+			print('\t'*idx, key, ': ', end = '')
+			if(isinstance(value, np.ndarray)):
+				print(value.shape)
+			else: print(value)
 
 ######################################################
 ####################### Others #######################

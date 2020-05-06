@@ -207,7 +207,7 @@ class IAP(object):
 
 		print ('Saving files...')
 		np.savetxt(join(self.write_dir, 'prediction_SVM'), y_pred)
-		np.savetxt('./IAP/prediction_SVM', y_pred)
+		np.savetxt('./IAP/prediction_SVM', y_pred) ## TODO: Fix the paths
 		np.savetxt('./IAP/probabilities_SVM', y_proba)
 		
 		self.y_pred = y_pred
