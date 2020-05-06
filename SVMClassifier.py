@@ -13,6 +13,7 @@ class SVMClassifier(BaseEstimator):
 	def __init__(self, skewedness=3., n_components=85, C=100, rs = None):
 		self.platt_params = []
 		self.feature_map_fourier = SkewedChi2Sampler(skewedness=skewedness,	n_components=n_components, random_state = rs)
+		# random_state plays a role in LinearSVC and SVC when dual = True (It is defaulted to True). 
 		self.clf = Pipeline([('fp', self.feature_map_fourier),
 							 ('svm', LinearSVC(C=C, random_state = rs, class_weight = 'balanced'))
 							])

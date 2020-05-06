@@ -17,14 +17,20 @@ from sklearn.exceptions import ConvergenceWarning
 
 import pickle
 
-from DAP import DAP
-from utils import *
+a = np.random.randint(0, 10, (3, 4))
+print(a)
+for p in a:
+	p = p / 2
+	print(p)
+print(a)
+# from DAP import DAP
+# from utils import *
 
-with open('./DAP_binary/p_data_0.61305.pickle', 'rb') as fp:
-	obj = pickle.load(fp)
-dap = obj['self']
+# with open('./DAP_binary/p_data_0.61305.pickle', 'rb') as fp:
+# 	obj = pickle.load(fp)
+# dap = obj['self']
 
-print_dict(dap.__dict__)
+# print_dict(dap.__dict__)
 
 # digits = load_digits()
 # X, y = digits.data,digits.target

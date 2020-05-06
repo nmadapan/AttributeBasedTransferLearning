@@ -69,7 +69,7 @@ class DAP(object):
 
 		self.requirements() # Prints data requirements
 
-		## Variables updated  by a call to initialize_data_vars()
+		## Variables updated by a call to initialize_data_vars()
 		self.seen_data_input, self.seen_data_output = None, None
 		self.seen_attr_mat, self.unseen_attr_mat = None, None
 		self.seen_class_ids, self.unseen_class_ids = None, None
@@ -83,19 +83,23 @@ class DAP(object):
 		## Variables udpated by a call to preprocess()
 		self.seen_mean, self.seen_std = None, None
 
-		## Variables updated by fit(): For unseen data
+		## Variables updated by a call to fit(): All variables are for unseen data
 		self.a_pred = None # Predicted scores of attributes
 		self.a_proba = None # Predicted probabilities of attributes
 		self.unseen_fscores = None # f-scores of attributes
 
-		## Variables updated by evaluate(): Unseen data
-		self.confusion_matrix = None # np.ndarray of shape (num_unseen_samples x num_seen_classes)
-		self.class_prob_matrix = None # probabilities of unseen classes
+		## Variables updated by a call to evaluate(): All variables are for unseen data
+		self.confusion_matrix = None # np.ndarray of shape (num_unseen_classes x num_unseen_classes)
+		# probabilities of unseen classes. np.ndarray of shape (num_unseen_classes x num_unseen_classes)
+		self.class_prob_matrix = None 
 
 		## Variables updated by generate_results
-		self.class_auc = None # AUC of each class
-		self.unseen_class_roc_curve = None # list of false positive and true positives of each class
-		self.unseen_attr_auc = None # AUC of each attribute
+		self.class_auc = None # AUC of each class. 1D np.ndarray of shape (num_unseen_classes, )
+		# list of false positive and true positives of each class. List of size (num_unseen_classes, )
+		# Each element is a 2D np.ndarray of shape (_, 2). 
+		# 1st col - false positives, 2nd col - true positives.
+		self.unseen_class_roc_curve = None
+		self.unseen_attr_auc = None # AUC of each attribute. 1D np.ndarray of shape (num_attr, )
 
 		self.initialize_data_vars(data_dict)
 
@@ -175,8 +179,8 @@ class DAP(object):
 		self.X_train, self.a_train = None, None
 		self.X_test, self.a_test = None, None
 		self.seen_data_input, self.seen_data_output = None, None
-		self.unseen_data_input, self.unseen_data_output = None, None
-		self.a_pred, self.a_proba = None, None
+		self.unseen_data_input = None # self.unseen_data_output is not None
+		self.a_pred = None # self.a_proba is not None
 
 	def save(self, fname):
 		self._clear_data_vars()
@@ -227,7 +231,7 @@ class DAP(object):
 			clf = GridSearchCV(model, cv_parameters, cv = 5, n_jobs = None, \
 								scoring = make_scorer(roc_auc_score))
 			clf.fit(x_train, y_train)
-			print(clf.best_params_)		
+			print(clf.best_params_)
 			return clf.best_estimator_
 
 	def fit(self, cv_parameters = None):
@@ -310,12 +314,21 @@ class DAP(object):
 
 		return confusion, np.asarray(prob), self.unseen_data_output
 
-	def generate_results(self, classes, confusion_mat, prob_mat, unseen_labels):
+	def generate_results(self, classes):
+		'''
+			Following instance variables are used to generate results:
+			1. self.confusion_matrix
+			2. self.class_prob_matrix
+			3. self.unseen_attr_mat
+			4. self.unseen_data_output
+			5. self.a_proba
+		'''
 		wpath = join(self.write_dir, 'AwA-ROC-confusion-DAP-'+p_type+'-SVM.pdf')
-		plot_confusion(confusion_mat, classes, wpath)
+		plot_confusion(self.confusion_matrix, classes, wpath)
 
 		wpath = join(self.write_dir, 'AwA-ROC-DAP-SVM.pdf')
-		unseen_class_auc, unseen_class_roc_curve = plot_roc(prob_mat, unseen_labels, classes, wpath)
+		unseen_class_auc, unseen_class_roc_curve = plot_roc(self.class_prob_matrix,\
+											self.unseen_data_output, classes, wpath)
 		# An np.ndarray of shape (num_unseen_classes, ). Each element is the AUC of that unseen class. 
 		self.unseen_class_auc = unseen_class_auc
 		# A list of size (num_unseen_classes). Each element is a np.ndarray of shape (_ x 2). 
@@ -323,11 +336,12 @@ class DAP(object):
 		self.unseen_class_roc_curve = unseen_class_roc_curve 
 
 		wpath = join(self.write_dir, 'AwA-AttAUC-DAP-SVM.pdf')
-		unseen_attr_auc = plot_attAUC(self.a_proba, self.a_test, wpath)
+		a_test = self.unseen_attr_mat[self.unseen_data_output, :]
+		unseen_attr_auc = plot_attAUC(self.a_proba, a_test, wpath)
 		# An np.ndarray of shape (num_attr, ). Each element is an AUC of that attribute. 
 		self.unseen_attr_auc = unseen_attr_auc
 
-		print ("Mean class accuracy %g" % np.mean(np.diag(confusion_mat)*100))
+		print ("Mean class accuracy %g" % np.mean(np.diag(self.confusion_matrix)*100))
 
 
 if __name__ == '__main__':
@@ -340,6 +354,7 @@ if __name__ == '__main__':
 				  'fp__n_components': [50],
 				  'svm__C': [1.]} # [1., 10.]
 	p_type = 'binary'
+	out_fname = 'dap_' + basename(data_path)[:-4] + '.pickle'
 	print('Gesture Data ... ', p_type)
 	###########################
 
@@ -357,7 +372,10 @@ if __name__ == '__main__':
 	start = time()
 	dap.fit(parameters)
 	print('Total time taken: %.02f secs'%(time()-start))
-
 	confusion, prob, L = dap.evaluate()
-	dap.generate_results(classes, confusion, prob, L)
-	dap.save('p_' + basename(data_path)[:-4] + '.pickle')
+	dap.generate_results(classes)
+	dap.save(out_fname)
+
+	# with open(join('./DAP_'+p_type, out_fname), 'rb') as fp:
+	# 	dap = pickle.load(fp)['self']
+	# dap.generate_results(classes)

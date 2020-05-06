@@ -6,9 +6,9 @@ from sklearn.base import BaseEstimator
 from platt import SigmoidTrain, SigmoidPredict
 
 class SVMRegressor(BaseEstimator):
-    def __init__(self, skewedness=3., n_components=85, C=100):
+    def __init__(self, skewedness=3., n_components=85, C=100, rs=None):
     	self.platt_params = []
-    	self.feature_map_fourier = SkewedChi2Sampler(skewedness=skewedness,	n_components=n_components)
+    	self.feature_map_fourier = SkewedChi2Sampler(skewedness=skewedness,	n_components=n_components, random_state=rs)
     	self.clf = Pipeline([("fp", self.feature_map_fourier),
 			                 ("svm", SVR(C=C))
                             ])
@@ -28,8 +28,8 @@ class SVMRegressor(BaseEstimator):
         return SigmoidPredict(y_pred, self.platt_params)
 
 class SVMRegressorIAP(BaseEstimator):
-    def __init__(self, skewedness=3., n_components=85, C=100.):
-    	self.feature_map_fourier = SkewedChi2Sampler(skewedness=skewedness,	n_components=n_components)
+    def __init__(self, skewedness=3., n_components=85, C=100., rs=None):
+    	self.feature_map_fourier = SkewedChi2Sampler(skewedness=skewedness,	n_components=n_components, random_state=rs)
     	self.clf = Pipeline([("fp", self.feature_map_fourier),
 			("svm", SVR(C=C))]) ## TODO: Check it. There is a bug in the original code. 
 
