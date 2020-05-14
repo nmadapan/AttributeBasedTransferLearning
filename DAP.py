@@ -335,11 +335,12 @@ class DAP(object):
 		# First column is true positives and second column is false positives. 
 		self.unseen_class_roc_curve = unseen_class_roc_curve 
 
-		wpath = join(self.write_dir, 'AwA-AttAUC-DAP-SVM.pdf')
-		a_test = self.unseen_attr_mat[self.unseen_data_output, :]
-		unseen_attr_auc = plot_attAUC(self.a_proba, a_test, wpath)
-		# An np.ndarray of shape (num_attr, ). Each element is an AUC of that attribute. 
-		self.unseen_attr_auc = unseen_attr_auc
+		if(self.binary):
+			wpath = join(self.write_dir, 'AwA-AttAUC-DAP-SVM.pdf')
+			a_test = self.unseen_attr_mat[self.unseen_data_output, :]
+			unseen_attr_auc = plot_attAUC(self.a_proba, a_test, wpath)
+			# An np.ndarray of shape (num_attr, ). Each element is an AUC of that attribute. 
+			self.unseen_attr_auc = unseen_attr_auc
 
 		print ("Mean class accuracy %g" % np.mean(np.diag(self.confusion_matrix)*100))
 
@@ -358,15 +359,15 @@ if __name__ == '__main__':
 	print('Gesture Data ... ', p_type)
 	###########################
 
-	####### To test on awa #######
-	# # This is to convert awa data to a compatible format.
+	###### To test on awa #######
+	# This is to convert awa data to a compatible format.
 	# print('AwA data ...')
 	# classes = loadstr('testclasses.txt')
 	# data = awa_to_dstruct()
 	# parameters = None	
 	# normalize = False
 	# p_type = 'binary'
-	##############################
+	#############################
 
 	dap = DAP(data, predicate_type = p_type, normalize = normalize)
 	start = time()
@@ -375,6 +376,10 @@ if __name__ == '__main__':
 	confusion, prob, L = dap.evaluate()
 	dap.generate_results(classes)
 	dap.save(out_fname)
+
+	# with open(join(dap.write_dir, 'full_data.pickle'), 'wb') as fp:
+	# 	pickle.dump({'data': data}, fp)	
+
 
 	# with open(join('./DAP_'+p_type, out_fname), 'rb') as fp:
 	# 	dap = pickle.load(fp)['self']

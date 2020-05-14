@@ -17,12 +17,12 @@ from sklearn.exceptions import ConvergenceWarning
 
 import pickle
 
-a = np.random.randint(0, 10, (3, 4))
-print(a)
-for p in a:
-	p = p / 2
-	print(p)
-print(a)
+# a = np.random.randint(0, 10, (3, 4))
+# print(a)
+# for p in a:
+# 	p = p / 2
+# 	print(p)
+# print(a)
 # from DAP import DAP
 # from utils import *
 
